@@ -3,11 +3,11 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHash, randomBytes } from "node:crypto";
-import bcrypt from "bcryptjs";
 import { and, count, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { loginAttempts, roles, sessions, users } from "@/db/schema";
 import { hasPermission } from "./permissions";
+import { supabaseAnon } from "./supabase";
 
 const COOKIE = "dt_session";
 const SESSION_HOURS = 12;
@@ -117,14 +117,10 @@ export async function destroySession() {
   jar.delete(COOKIE);
 }
 
-export async function hashPassword(plain: string) {
-  return bcrypt.hash(plain, 12);
-}
-
 /** Password rules for new passwords. Returns an error message, or null when fine. */
 export function passwordProblem(pw: string): string | null {
   if (pw.length < 10) return "Use at least 10 characters.";
-  // bcrypt only reads the first 72 bytes, so a longer password would be silently cut short.
+  // Supabase Auth (bcrypt) only reads the first 72 bytes, so a longer password would be silently cut short.
   if (new TextEncoder().encode(pw).length > 72) return "Use at most 72 characters.";
   if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/\d/.test(pw)) return "Use upper-case, lower-case letters and a number.";
   return null;
@@ -151,17 +147,16 @@ export async function attemptLogin(email: string, password: string): Promise<Log
     return { ok: false, error: `Too many attempts. Try again in ${WINDOW_MINUTES} minutes.` };
   }
 
+  // Always ask Supabase, even for an unknown email, so both failures take about the same time.
+  const { data, error } = await supabaseAnon().auth.signInWithPassword({ email, password });
   const [user] = await db
-    .select({ id: users.id, hash: users.passwordHash, active: users.active })
+    .select({ id: users.id, authId: users.authId, active: users.active })
     .from(users)
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
     .limit(1);
 
-  // Always run a hash comparison so a wrong email takes as long as a wrong password.
-  const hash = user?.hash ?? "$2b$12$C6UzMDM.H6dfI/f/IKcEeO5G3x6q2pIo1m3pZ4c0w2xwY5uS2m9eS";
-  const matches = await bcrypt.compare(password, hash);
-
-  if (!user || !user.active || !matches) {
+  // The Supabase project may hold other people's logins: only a login linked to an active user here gets in.
+  if (error || !data.user || !user || !user.active || user.authId !== data.user.id) {
     await db.insert(loginAttempts).values(keys.map((key) => ({ key })));
     return { ok: false, error: "Wrong email or password." };
   }
@@ -172,6 +167,8 @@ export async function attemptLogin(email: string, password: string): Promise<Log
 }
 
 export async function verifyPassword(userId: number, password: string): Promise<boolean> {
-  const [u] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId)).limit(1);
-  return !!u && bcrypt.compare(password, u.hash);
+  const [u] = await db.select({ email: users.email, authId: users.authId }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!u?.authId) return false;
+  const { data, error } = await supabaseAnon().auth.signInWithPassword({ email: u.email, password });
+  return !error && data.user?.id === u.authId;
 }

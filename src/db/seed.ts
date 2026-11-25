@@ -5,10 +5,10 @@
  */
 import { randomBytes } from "node:crypto";
 import { config } from "dotenv";
-import bcrypt from "bcryptjs";
+import { createClient } from "@supabase/supabase-js";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { count, sql } from "drizzle-orm";
+import { count, isNull, sql } from "drizzle-orm";
 import * as s from "./schema";
 
 // Same lookup as drizzle.config.ts. dotenv ignores missing files.
@@ -54,13 +54,30 @@ async function main() {
   const [{ n: userCount } = { n: 0 }] = await db.select({ n: count() }).from(s.users);
   if (userCount === 0) {
     const [admin] = await db.select().from(s.roles).where(sql`${s.roles.name} = 'Administrator'`);
-    const email = process.env.SEED_ADMIN_EMAIL || "admin@example.com";
-    const generated = !process.env.SEED_ADMIN_PASSWORD;
-    const password = process.env.SEED_ADMIN_PASSWORD || `Dt-${randomBytes(9).toString("base64url")}!9`;
-    await db.insert(s.users).values({ name: "Administrator", email, passwordHash: await bcrypt.hash(password, 12), roleId: admin!.id });
-    console.log(`\nAdministrator created:\n  email:    ${email}\n  password: ${generated ? password : "(the one you set in SEED_ADMIN_PASSWORD)"}\n  Change it after signing in.\n`);
+    await db.insert(s.users).values({ name: "Administrator", email: process.env.SEED_ADMIN_EMAIL || "admin@example.com", roleId: admin!.id });
+  }
+
+  // Passwords live in Supabase Auth: give every user that has no login yet one (also links admins created before the move).
+  const unlinked = await db.select().from(s.users).where(isNull(s.users.authId));
+  if (unlinked.length) {
+    const sbUrl = process.env.SUPABASE_URL, sbKey = process.env.SUPABASE_SECRET_KEY;
+    if (!sbUrl || !sbKey) throw new Error("SUPABASE_URL and SUPABASE_SECRET_KEY must be set to create logins.");
+    const sb = createClient(sbUrl, sbKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    for (const u of unlinked) {
+      const generated = !process.env.SEED_ADMIN_PASSWORD;
+      const password = process.env.SEED_ADMIN_PASSWORD || `Dt-${randomBytes(9).toString("base64url")}!9`;
+      const { data, error } = await sb.auth.admin.createUser({ email: u.email, password, email_confirm: true });
+      if (error || !data.user) throw new Error(`Could not create the login for ${u.email}: ${error?.message} (if it says the email exists, the Supabase project already has that email — use another SEED_ADMIN_EMAIL).`);
+      await db.update(s.users).set({ authId: data.user.id }).where(sql`${s.users.id} = ${u.id}`);
+      console.log(`
+Login created:
+  email:    ${u.email}
+  password: ${generated ? password : "(the one you set in SEED_ADMIN_PASSWORD)"}
+  Change it after signing in.
+`);
+    }
   } else {
-    console.log("Users already exist — no administrator created.");
+    console.log("Every user already has a login.");
   }
   console.log("Seed finished.");
 }

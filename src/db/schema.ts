@@ -8,6 +8,7 @@ import {
   jsonb,
   date,
   smallint,
+  uuid,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -38,7 +39,8 @@ export const users = app.table(
     id: id(),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    passwordHash: text("password_hash").notNull(),
+    /** The Supabase Auth login (auth.users.id) that holds this person's password. Null only until `db:seed` links it. */
+    authId: uuid("auth_id").unique(),
     roleId: integer("role_id").notNull().references(() => roles.id),
     active: boolean("active").notNull().default(true),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),

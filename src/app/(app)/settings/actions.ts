@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { and, count, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leadSources, leadTypes, leads, pipelineStages, roles, sessions, users } from "@/db/schema";
-import { hashPassword, passwordProblem, requireSession } from "@/lib/auth";
+import { passwordProblem, requireSession } from "@/lib/auth";
+import { createLogin, deleteLogin, updateLogin } from "@/lib/supabase";
 import { echo, type FormState } from "@/lib/form-state";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
 import { optionalInt, str, tidy } from "@/lib/utils";
@@ -53,11 +54,30 @@ export async function saveUserAction(id: number | null, _prev: FormState, form: 
       const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(and(eq(roles.permissionType, "all"), eq(users.active, true), ne(users.id, id)));
       if (n === 0) return { error: "This is the only active administrator, so it must stay an active administrator.", values: { ...echo(form), password: "" } };
     }
-    await db.update(users).set({ name, email, roleId: roleId!, active, ...(password ? { passwordHash: await hashPassword(password) } : {}) }).where(eq(users.id, id));
+    const [cur] = await db.select({ email: users.email, authId: users.authId }).from(users).where(eq(users.id, id)).limit(1);
+    let authId = cur?.authId ?? null;
+    if (!authId) {
+      // A user not yet linked to a Supabase login (e.g. created before the move): make one now.
+      if (!password) return { fieldErrors: { password: "Set a password for this user." }, error: "Please fix the highlighted fields.", values: { ...echo(form), password: "" } };
+      const made = await createLogin(email, password);
+      if (!made.ok) return { fieldErrors: { email: made.error }, error: "Please fix the highlighted fields.", values: { ...echo(form), password: "" } };
+      authId = made.id;
+    } else if (password || email !== cur?.email) {
+      const err = await updateLogin(authId, { ...(password ? { password } : {}), ...(email !== cur?.email ? { email } : {}) });
+      if (err) return { fieldErrors: { [password && !err.includes("email") ? "password" : "email"]: err }, error: "Please fix the highlighted fields.", values: { ...echo(form), password: "" } };
+    }
+    await db.update(users).set({ name, email, roleId: roleId!, active, authId }).where(eq(users.id, id));
     // A deactivated user, or one whose password was reset, is signed out everywhere.
     if (!active || password) await db.delete(sessions).where(eq(sessions.userId, id));
   } else {
-    await db.insert(users).values({ name, email, roleId: roleId!, active, passwordHash: await hashPassword(password) });
+    const made = await createLogin(email, password);
+    if (!made.ok) return { fieldErrors: { email: made.error }, error: "Please fix the highlighted fields.", values: { ...echo(form), password: "" } };
+    try {
+      await db.insert(users).values({ name, email, roleId: roleId!, active, authId: made.id });
+    } catch (e) {
+      await deleteLogin(made.id); // don't leave an orphan login behind
+      throw e;
+    }
   }
   revalidatePath("/settings/users");
   redirect("/settings/users?saved=saved");
@@ -67,13 +87,14 @@ export async function saveUserAction(id: number | null, _prev: FormState, form: 
 export async function deleteUserAction(id: number) {
   const me = await guard("settings.users");
   if (id === me.user.id) back("/settings/users", { error: "You can't delete your own account." });
-  const [target] = await db.select({ id: users.id, active: users.active, type: roles.permissionType }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(users.id, id)).limit(1);
+  const [target] = await db.select({ id: users.id, authId: users.authId, active: users.active, type: roles.permissionType }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(users.id, id)).limit(1);
   if (!target) back("/settings/users", { error: "This user no longer exists." });
   if (target!.type === "all" && target!.active) {
     const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(and(eq(roles.permissionType, "all"), eq(users.active, true), ne(users.id, id)));
     if (n === 0) back("/settings/users", { error: "This is the only active administrator, so it can't be deleted." });
   }
   await db.delete(users).where(eq(users.id, id));
+  if (target!.authId) await deleteLogin(target!.authId);
   revalidatePath("/settings/users");
   redirect("/settings/users?saved=deleted");
 }

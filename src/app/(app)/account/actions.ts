@@ -6,7 +6,8 @@ import { cookies } from "next/headers";
 import { createHash } from "node:crypto";
 import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
-import { hashPassword, passwordProblem, requireSession, verifyPassword } from "@/lib/auth";
+import { passwordProblem, requireSession, verifyPassword } from "@/lib/auth";
+import { updateLogin } from "@/lib/supabase";
 import type { FormState } from "@/lib/form-state";
 import { str } from "@/lib/utils";
 
@@ -24,7 +25,9 @@ export async function changePasswordAction(_prev: FormState, form: FormData): Pr
   if (next !== confirm) errors.confirm = "The two passwords don't match.";
   if (Object.keys(errors).length) return { fieldErrors: errors, error: "Please fix the highlighted fields." };
 
-  await db.update(users).set({ passwordHash: await hashPassword(next) }).where(eq(users.id, session.user.id));
+  const [me] = await db.select({ authId: users.authId }).from(users).where(eq(users.id, session.user.id)).limit(1);
+  const err = me?.authId ? await updateLogin(me.authId, { password: next }) : "Your login is not linked yet. Ask an administrator.";
+  if (err) return { error: err };
   // Sign out every other device; this one stays signed in.
   const token = (await cookies()).get("dt_session")?.value;
   if (token) await db.delete(sessions).where(and(eq(sessions.userId, session.user.id), ne(sessions.id, createHash("sha256").update(token).digest("hex"))));

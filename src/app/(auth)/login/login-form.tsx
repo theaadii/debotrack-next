@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, EyeOff } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { loginAction, type LoginState } from "../actions";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export function LoginForm() {
           </button>
         </div>
       </Field>
+      <Link href="/forgot-password" className="block text-right text-sm text-muted-foreground hover:underline">Forgot password?</Link>
       {state.error && (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
           {state.error}
