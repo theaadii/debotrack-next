@@ -4,8 +4,10 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { quoteNumber, type QuoteDetail } from "./quotes";
 
-const FONT = path.join(process.cwd(), "src/assets/fonts/DejaVuSans.ttf");
-const FONT_BOLD = path.join(process.cwd(), "src/assets/fonts/DejaVuSans-Bold.ttf");
+// Manrope (the UI font, from Google Fonts) so the PDF matches the app. The static 400/700
+// instances are served from public/fonts because they need to be fetched by the browser too.
+const FONT = path.join(process.cwd(), "public/fonts/Manrope-Regular.ttf");
+const FONT_BOLD = path.join(process.cwd(), "public/fonts/Manrope-Bold.ttf");
 const LOGO = path.join(process.cwd(), "public/brand/logo-light.png");
 
 const GREEN = "#1f7a3a";

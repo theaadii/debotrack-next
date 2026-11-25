@@ -1,13 +1,19 @@
 /**
  * Creates the starting data: roles, the first administrator, pipeline stages, lead sources and types.
  * Safe to run again — it only fills in what is missing.   Run:  pnpm db:seed
+ * Reads .env.local / .env when present, so it also works with DATABASE_URL exported in the shell.
  */
 import { randomBytes } from "node:crypto";
+import { config } from "dotenv";
 import bcrypt from "bcryptjs";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { count, sql } from "drizzle-orm";
 import * as s from "./schema";
+
+// Same lookup as drizzle.config.ts. dotenv ignores missing files.
+config({ path: ".env.local" });
+config();
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");

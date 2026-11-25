@@ -3,7 +3,8 @@ import ExcelJS from "exceljs";
 import Papa from "papaparse";
 import { safeCell, unsafeCell } from "@/lib/csv-schema";
 
-export const MAX_BYTES = 10 * 1024 * 1024;
+// 4 MB, not 10: Vercel rejects any request body over 4.5 MB before it reaches the app.
+export const MAX_BYTES = 4 * 1024 * 1024;
 export const MAX_ROWS = 10_000;
 
 const cellText = (v: ExcelJS.CellValue): string => {
@@ -21,7 +22,7 @@ const cellText = (v: ExcelJS.CellValue): string => {
 /** An uploaded .csv or .xlsx as a grid of text (first row = headers). Throws a readable Error. */
 export async function readSpreadsheet(file: File): Promise<string[][]> {
   if (file.size === 0) throw new Error("The file is empty.");
-  if (file.size > MAX_BYTES) throw new Error("The file is larger than 10 MB. Split it into smaller files.");
+  if (file.size > MAX_BYTES) throw new Error("The file is larger than 4 MB. Split it into smaller files.");
   const name = file.name.toLowerCase();
   let grid: string[][];
 

@@ -9,7 +9,8 @@ import type { ImportState } from "@/lib/import-state";
 
 type Opt = { id: number; name: string };
 
-const MAX_BYTES = 10 * 1024 * 1024;
+// Keep in step with src/server/spreadsheet.ts and the 4.5 MB request limit on Vercel.
+const MAX_BYTES = 4 * 1024 * 1024;
 
 /** A drop zone that shows what was chosen and refuses the obvious mistakes (wrong type, too large) before uploading. */
 function FilePicker({ onValid }: { onValid: (ok: boolean) => void }) {
@@ -24,7 +25,7 @@ function FilePicker({ onValid }: { onValid: (ok: boolean) => void }) {
     if (f) {
       if (!/\.(csv|xlsx|txt)$/i.test(f.name)) p = "Only .csv and .xlsx files can be imported.";
       else if (f.size === 0) p = "That file is empty.";
-      else if (f.size > MAX_BYTES) p = "That file is larger than 10 MB. Split it into smaller files.";
+      else if (f.size > MAX_BYTES) p = "That file is larger than 4 MB. Split it into smaller files.";
     }
     setProblem(p);
     onValid(!!f && !p);
@@ -120,7 +121,7 @@ export function ImportForm({
         {learners && <input type="hidden" name="learners_only" value="1" />}
         <Card>
           <CardTitle className="mb-3">2. Upload your file</CardTitle>
-          <p className="mb-2 text-sm text-muted-foreground">CSV or Excel, up to 10 MB and 10,000 rows.</p>
+          <p className="mb-2 text-sm text-muted-foreground">CSV or Excel, up to 4 MB and 10,000 rows.</p>
           <FilePicker onValid={setHasFile} />
         </Card>
 

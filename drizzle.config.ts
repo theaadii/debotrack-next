@@ -9,5 +9,5 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   schemaFilter: ["app"],
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  dbCredentials: { url: process.env.DIRECT_URL || process.env.DATABASE_URL! },
 });

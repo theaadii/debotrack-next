@@ -20,11 +20,18 @@ const csp = [
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
-  experimental: { serverActions: { bodySizeLimit: "12mb" } },
+  // 4 MB files plus the multipart envelope; Vercel itself cuts the request off at 4.5 MB.
+  experimental: { serverActions: { bodySizeLimit: "5mb" } },
   partialPrefetching: true,
   poweredByHeader: false,
   // pdfkit reads its own data files from node_modules at run time, so it must not be bundled.
-  serverExternalPackages: ["pdfkit"],
+  // postgres ships a workerd-specific build that must be used on Cloudflare Workers.
+  serverExternalPackages: ["pdfkit", "postgres"],
+  // quote-pdf.ts reads these from disk at run time. Without this the serverless bundle omits them
+  // and every quote PDF fails in production (works locally, 500 on Vercel).
+  outputFileTracingIncludes: {
+    "/api/quotes/[id]/pdf": ["./public/fonts/**/*", "./public/brand/**/*"],
+  },
   async headers() {
     return [
       {
