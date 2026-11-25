@@ -27,7 +27,8 @@ export default async function EditQuotePage({ params }: PageProps<"/quotes/[id]/
     lead_id: q.leadId ? String(q.leadId) : "",
     adjustment: Number(q.adjustmentAmount) ? String(Number(q.adjustmentAmount)) : "",
     bill_address: a.address ?? "", bill_city: a.city ?? "", bill_state: a.state ?? "", bill_postcode: a.postcode ?? "", bill_country: a.country ?? "",
-    learner: { id: q.learnerId, name: q.learner, phone: q.phones[0] ?? "", email: q.emails[0] ?? "", city: "" },
+    recipient_kind: q.recipientKind, recipient_name: q.recipientName ?? "", recipient_contact: q.recipientContact ?? "",
+    learner: q.learnerId === null ? null : { id: q.learnerId, name: q.learner, phone: q.phones[0] ?? "", email: q.emails[0] ?? "", city: "" },
     items: q.items.map((it) =>
       newItem({ sku: it.sku ?? "", name: it.name, quantity: String(it.quantity), price: String(Number(it.price)), discountKind: it.discountKind, discountValue: Number(it.discountValue) ? String(Number(it.discountValue)) : "", taxPercent: Number(it.taxPercent) ? String(Number(it.taxPercent)) : "" }),
     ),

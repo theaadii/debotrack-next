@@ -62,7 +62,7 @@ export function renderQuotePdf(q: QuoteDetail): Promise<Buffer> {
     let by = y + 14;
     doc.font("b").fontSize(11).fillColor(INK).text(q.learner, bx, by, { width: colW });
     by = doc.y + 2;
-    const lines = [q.phones[0], q.emails[0], q.billingAddress?.address, [q.billingAddress?.city, q.billingAddress?.postcode].filter(Boolean).join(" "), q.billingAddress?.state, q.billingAddress?.country].filter(Boolean) as string[];
+    const lines = [q.recipientContact, q.phones[0], q.emails[0], q.billingAddress?.address, [q.billingAddress?.city, q.billingAddress?.postcode].filter(Boolean).join(" "), q.billingAddress?.state, q.billingAddress?.country].filter(Boolean) as string[];
     doc.font("r").fontSize(10).fillColor(INK);
     for (const l of lines) {
       doc.text(l, bx, by, { width: colW });

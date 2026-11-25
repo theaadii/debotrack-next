@@ -11,13 +11,43 @@ export function quoteScope(session: Session): SQL | undefined {
 
 const esc = (s: string) => s.replace(/[\\%_]/g, "\\$&");
 
-export async function listQuotes(session: Session, opts: { q?: string; page: number; pageSize: number }) {
+export const QUOTE_SORTS = ["newest", "oldest", "total_desc", "total_asc", "expiring"] as const;
+export type QuoteSort = (typeof QUOTE_SORTS)[number];
+export type QuoteFilters = {
+  q?: string;
+  page: number;
+  pageSize: number;
+  sort?: QuoteSort;
+  kind?: "learner" | "college" | "vendor" | "other";
+  validity?: "active" | "expired";
+  ownerId?: number;
+  from?: string;
+  to?: string;
+};
+
+function quoteOrder(sort?: QuoteSort) {
+  switch (sort) {
+    case "oldest": return [asc(quotes.createdAt), asc(quotes.id)];
+    case "total_desc": return [desc(quotes.grandTotal), desc(quotes.id)];
+    case "total_asc": return [asc(quotes.grandTotal), desc(quotes.id)];
+    case "expiring": return [sql`${quotes.expiredAt} asc nulls last`, desc(quotes.id)];
+    default: return [desc(quotes.createdAt), desc(quotes.id)];
+  }
+}
+
+export async function listQuotes(session: Session, opts: QuoteFilters) {
   const where: (SQL | undefined)[] = [quoteScope(session)];
   const q = opts.q?.trim();
   if (q) {
     const like = `%${esc(q)}%`;
-    where.push(or(ilike(quotes.subject, like), ilike(learners.name, like), sql`${quotes.id}::text = ${q.replace(/^Q-?0*/i, "")}`));
+    where.push(or(ilike(quotes.subject, like), ilike(learners.name, like), ilike(quotes.recipientName, like), sql`${quotes.id}::text = ${q.replace(/^Q-?0*/i, "")}`));
   }
+  if (opts.kind) where.push(eq(quotes.recipientKind, opts.kind));
+  if (opts.ownerId) where.push(eq(quotes.ownerId, opts.ownerId));
+  if (opts.validity === "active") where.push(sql`(${quotes.expiredAt} is null or ${quotes.expiredAt} >= current_date)`);
+  if (opts.validity === "expired") where.push(sql`${quotes.expiredAt} < current_date`);
+  if (opts.from) where.push(sql`${quotes.createdAt} >= ${opts.from}::date`);
+  if (opts.to) where.push(sql`${quotes.createdAt} < (${opts.to}::date + 1)`);
   const cond = and(...where);
 
   const [rows, [count]] = await Promise.all([
@@ -26,20 +56,21 @@ export async function listQuotes(session: Session, opts: { q?: string; page: num
         id: quotes.id,
         subject: quotes.subject,
         learnerId: quotes.learnerId,
-        learner: learners.name,
+        learner: sql<string>`coalesce(${learners.name}, ${quotes.recipientName}, '')`,
+        recipientKind: quotes.recipientKind,
         owner: users.name,
         grandTotal: quotes.grandTotal,
         expiredAt: quotes.expiredAt,
         createdAt: quotes.createdAt,
       })
       .from(quotes)
-      .innerJoin(learners, eq(learners.id, quotes.learnerId))
+      .leftJoin(learners, eq(learners.id, quotes.learnerId))
       .leftJoin(users, eq(users.id, quotes.ownerId))
       .where(cond)
-      .orderBy(desc(quotes.createdAt), desc(quotes.id))
+      .orderBy(...quoteOrder(opts.sort))
       .limit(opts.pageSize)
       .offset((opts.page - 1) * opts.pageSize),
-    db.select({ n: sql<number>`count(*)::int` }).from(quotes).innerJoin(learners, eq(learners.id, quotes.learnerId)).where(cond),
+    db.select({ n: sql<number>`count(*)::int` }).from(quotes).leftJoin(learners, eq(learners.id, quotes.learnerId)).where(cond),
   ]);
   return { rows, total: count?.n ?? 0 };
 }
@@ -49,14 +80,14 @@ export async function getQuote(session: Session, id: number) {
   const [row] = await db
     .select({
       q: quotes,
-      learner: learners.name,
-      phones: learners.phones,
-      emails: learners.emails,
+      learner: sql<string>`coalesce(${learners.name}, ${quotes.recipientName}, '')`,
+      phones: sql<string[]>`coalesce(${learners.phones}, '{}'::text[])`,
+      emails: sql<string[]>`coalesce(${learners.emails}, '{}'::text[])`,
       owner: users.name,
       leadTitle: leads.title,
     })
     .from(quotes)
-    .innerJoin(learners, eq(learners.id, quotes.learnerId))
+    .leftJoin(learners, eq(learners.id, quotes.learnerId))
     .leftJoin(users, eq(users.id, quotes.ownerId))
     .leftJoin(leads, eq(leads.id, quotes.leadId))
     .where(and(eq(quotes.id, id), quoteScope(session)))

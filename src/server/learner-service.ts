@@ -1,21 +1,30 @@
 import "server-only";
 import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { colleges, learners } from "@/db/schema";
+import { collegeAliases, colleges, learners } from "@/db/schema";
+import { collegeKey, collegeKeySql } from "@/lib/college-key";
 import { keysFor } from "@/lib/phone";
 
-/** A college by name (case-insensitive); created when it does not exist yet. */
+/**
+ * The college an imported or typed name belongs to: matched by name (ignoring case, apostrophes and punctuation), then by
+ * its saved aliases (e.g. "MET IOE" and "MET BKC" for one college); created only when neither matches.
+ */
 export async function ensureCollege(name: string | null | undefined): Promise<number | null> {
   const clean = name?.trim();
   if (!clean) return null;
-  const find = () =>
-    db.select({ id: colleges.id }).from(colleges).where(sql`lower(${colleges.name}) = lower(${clean})`).limit(1);
+  const key = collegeKey(clean);
+  if (!key) return null;
+  const find = async () => {
+    const [byName] = await db.select({ id: colleges.id }).from(colleges).where(sql`${sql.raw(collegeKeySql("name"))} = ${key}`).limit(1);
+    if (byName) return byName.id;
+    const [byAlias] = await db.select({ id: collegeAliases.collegeId }).from(collegeAliases).where(eq(collegeAliases.aliasKey, key)).limit(1);
+    return byAlias?.id ?? null;
+  };
 
-  const [existing] = await find();
-  if (existing) return existing.id;
+  const existing = await find();
+  if (existing) return existing;
   await db.insert(colleges).values({ name: clean }).onConflictDoNothing();
-  const [created] = await find();
-  return created?.id ?? null;
+  return (await find()) ?? (await db.select({ id: colleges.id }).from(colleges).where(sql`lower(${colleges.name}) = lower(${clean})`).limit(1))[0]?.id ?? null;
 }
 
 /** An existing learner with the same phone (last 10 digits) or email; undefined scope = everyone. */

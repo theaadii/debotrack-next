@@ -120,6 +120,19 @@ export const colleges = app.table(
   (t) => [uniqueIndex("colleges_name_key").on(sql`lower(${t.name})`)],
 );
 
+/** Other spellings of a college (e.g. "MET IOE", "MET BKC"): an import with any of them lands on the same college. */
+export const collegeAliases = app.table(
+  "college_aliases",
+  {
+    id: id(),
+    collegeId: integer("college_id").notNull().references(() => colleges.id, { onDelete: "cascade" }),
+    alias: text("alias").notNull(),
+    /** The alias with case, punctuation and apostrophes removed; what imports are matched on. */
+    aliasKey: text("alias_key").notNull(),
+  },
+  (t) => [uniqueIndex("college_aliases_key").on(t.aliasKey), index("college_aliases_college_idx").on(t.collegeId)],
+);
+
 /** Students and working professionals (what the old CRM called "persons"). */
 export const learners = app.table(
   "learners",
@@ -227,7 +240,12 @@ export const quotes = app.table(
     id: id(),
     subject: text("subject").notNull(),
     description: text("description"),
-    learnerId: integer("learner_id").notNull().references(() => learners.id, { onDelete: "cascade" }),
+    /** Set when the quote is for a learner; otherwise the recipient is the free-text name below. */
+    learnerId: integer("learner_id").references(() => learners.id, { onDelete: "cascade" }),
+    recipientKind: text("recipient_kind", { enum: ["learner", "college", "vendor", "other"] }).notNull().default("learner"),
+    /** Who the quote is for when it is not a learner: a college, a vendor, another organisation. */
+    recipientName: text("recipient_name"),
+    recipientContact: text("recipient_contact"),
     leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
     /** The sales person. */
     ownerId: integer("owner_id").references(() => users.id, { onDelete: "set null" }),

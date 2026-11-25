@@ -41,10 +41,10 @@ export default async function CollegesPage({ searchParams }: PageProps<"/college
         ) : (
           <div className="px-1 pb-3 md:px-2">
             <Table>
-              <thead><tr><Th>Name</Th><Th>City</Th><Th>Website</Th><Th className="text-right">Learners</Th>{manage && <Th className="text-right">Actions</Th>}</tr></thead>
+              <thead><tr><Th className="w-12">Sr</Th><Th>Name</Th><Th>City</Th><Th>Website</Th><Th className="text-right">Learners</Th>{manage && <Th className="text-right">Actions</Th>}</tr></thead>
               <tbody>
-                {rows.map((c) => (
-                  <tr key={c.id} className="hover:bg-muted/50">
+                {rows.map((c, i) => (
+                  <tr key={c.id} className="hover:bg-muted/50"><Td className="tabular-nums text-muted-foreground">{i + 1}</Td>
                     <Td>
                       {manage ? <Link href={`/colleges/${c.id}/edit`} className="font-semibold text-brand hover:underline">{c.name}</Link> : <span className="font-semibold">{c.name}</span>}
                     </Td>

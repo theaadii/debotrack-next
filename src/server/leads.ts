@@ -14,7 +14,34 @@ export type LeadFilters = {
   programId?: number;
   from?: string; // yyyy-mm-dd
   to?: string;
+  /** Only enquiries whose status is of this kind ("won" = enrolled). */
+  stageKind?: "open" | "won" | "lost";
+  collegeId?: number;
+  minFee?: number;
+  maxFee?: number;
+  /** Date the enquiry was closed as won (the enrolment date). */
+  enrolledFrom?: string;
+  enrolledTo?: string;
+  sort?: LeadSort;
 };
+
+export const LEAD_SORTS = ["newest", "oldest", "fee_desc", "fee_asc", "name", "enrolled_new", "enrolled_old"] as const;
+export type LeadSort = (typeof LEAD_SORTS)[number];
+
+const feeExpr = sql`coalesce(${leads.finalFee}, ${leads.courseFee})`;
+
+function leadOrder(sort?: LeadSort) {
+  switch (sort) {
+    case "oldest": return [asc(leads.createdAt), asc(leads.id)];
+    case "fee_desc": return [sql`${feeExpr} desc nulls last`, desc(leads.id)];
+    case "fee_asc": return [sql`${feeExpr} asc nulls last`, desc(leads.id)];
+    case "name": return [asc(learners.name), asc(leads.id)];
+    case "enrolled_new": return [sql`${leads.closedAt} desc nulls last`, desc(leads.id)];
+    case "enrolled_old": return [sql`${leads.closedAt} asc nulls last`, asc(leads.id)];
+    // Default: open enquiries first (newest on top), finished ones (won / lost) after them.
+    default: return [sql`(${pipelineStages.kind} <> 'open')`, desc(leads.createdAt), desc(leads.id)];
+  }
+}
 
 const esc = (s: string) => s.replace(/[\\%_]/g, "\\$&");
 
@@ -24,6 +51,12 @@ export function leadConditions(session: Session, f: LeadFilters): (SQL | undefin
   if (f.sourceId) c.push(eq(leads.sourceId, f.sourceId));
   if (f.ownerId) c.push(eq(leads.ownerId, f.ownerId));
   if (f.programId) c.push(eq(leads.programId, f.programId));
+  if (f.stageKind) c.push(sql`${leads.stageId} in (select id from app.pipeline_stages where kind = ${f.stageKind})`);
+  if (f.collegeId) c.push(eq(learners.collegeId, f.collegeId));
+  if (f.minFee !== undefined) c.push(sql`${feeExpr} >= ${f.minFee}`);
+  if (f.maxFee !== undefined) c.push(sql`${feeExpr} <= ${f.maxFee}`);
+  if (f.enrolledFrom) c.push(gte(leads.closedAt, sql`${f.enrolledFrom}::date`));
+  if (f.enrolledTo) c.push(lt(leads.closedAt, sql`(${f.enrolledTo}::date + 1)`));
   if (f.from) c.push(gte(leads.createdAt, sql`${f.from}::date`));
   if (f.to) c.push(lt(leads.createdAt, sql`(${f.to}::date + 1)`));
   const q = f.q?.trim();
@@ -97,7 +130,7 @@ export type LeadRow = Awaited<ReturnType<typeof joined>>[number];
 export async function listLeads(session: Session, f: LeadFilters, page: number, pageSize: number) {
   const where = and(...leadConditions(session, f));
   const [rows, [{ total } = { total: 0 }]] = await Promise.all([
-    joined().where(where).orderBy(desc(leads.createdAt), desc(leads.id)).limit(pageSize).offset((page - 1) * pageSize),
+    joined().where(where).orderBy(...leadOrder(f.sort)).limit(pageSize).offset((page - 1) * pageSize),
     db
       .select({ total: sql<number>`count(*)::int` })
       .from(leads)

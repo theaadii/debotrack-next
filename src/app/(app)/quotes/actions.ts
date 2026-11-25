@@ -95,25 +95,42 @@ function parse(form: FormData) {
 const addressOrNull = (b: { address: string; city: string; state: string; postcode: string; country: string }) => (Object.values(b).some(Boolean) ? b : null);
 const money = (n: number) => n.toFixed(2);
 
-/** The learner (and optional enquiry) must exist and be ones this person is allowed to see. */
-async function resolveLinks(session: Awaited<ReturnType<typeof requireSession>>, form: FormData, errors: Record<string, string>) {
+type Recipient = { ok: boolean; learnerId: number | null; leadId: number | null; kind: "learner" | "college" | "vendor" | "other"; name: string | null; contact: string | null };
+const KINDS = ["learner", "college", "vendor", "other"] as const;
+
+/** Who the quote is for: a learner (and optional enquiry) the person may see, or a college / vendor / other organisation by name. */
+async function resolveLinks(session: Awaited<ReturnType<typeof requireSession>>, form: FormData, errors: Record<string, string>): Promise<Recipient> {
+  const kindRaw = String(form.get("recipient_kind") ?? "learner");
+  const kind = (KINDS as readonly string[]).includes(kindRaw) ? (kindRaw as Recipient["kind"]) : "learner";
+  const none = { ok: false, learnerId: null, leadId: null, kind, name: null, contact: null };
+
+  if (kind !== "learner") {
+    const name = str(form, "recipient_name");
+    const contact = optional(form, "recipient_contact");
+    if (!name) errors.recipient_name = kind === "college" ? "Enter the college or institute name." : "Enter who the quote is for.";
+    else if (name.length > 200) errors.recipient_name = "Keep the name under 200 characters.";
+    if (contact && contact.length > 200) errors.recipient_contact = "Keep the contact under 200 characters.";
+    if (errors.recipient_name || errors.recipient_contact) return none;
+    return { ok: true, learnerId: null, leadId: null, kind, name, contact };
+  }
+
   const learnerId = optionalInt(form, "learner_id");
   const leadId = optionalInt(form, "lead_id");
   if (!learnerId) {
     errors.learner_search = "Choose the learner this quote is for.";
-    return { learnerId: null, leadId: null };
+    return none;
   }
   const [l] = await db.select({ id: learners.id }).from(learners).where(and(eq(learners.id, learnerId), learnerScope(session))).limit(1);
   if (!l) {
     errors.learner_search = "That learner could not be found.";
-    return { learnerId: null, leadId: null };
+    return none;
   }
   let lead: number | null = null;
   if (leadId) {
     const [e] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), eq(leads.learnerId, learnerId), leadScope(session))).limit(1);
     lead = e?.id ?? null;
   }
-  return { learnerId: l.id, leadId: lead };
+  return { ok: true, learnerId: l.id, leadId: lead, kind, name: null, contact: null };
 }
 
 /** What the form shows again after a failed save. The items live in the form's own state, so only the plain fields are echoed. */
@@ -151,8 +168,9 @@ export async function createQuoteAction(_prev: FormState, form: FormData): Promi
   if (!session.can("quotes.create")) return { error: "You don't have permission to create quotes." };
 
   const p = parse(form);
-  const { learnerId, leadId } = await resolveLinks(session, form, p.errors);
-  if (Object.keys(p.errors).length || !p.totals || !learnerId) return { fieldErrors: p.errors, error: "Please fix the highlighted fields.", values: keep(form) };
+  const rcpt = await resolveLinks(session, form, p.errors);
+  const { leadId } = rcpt;
+  if (Object.keys(p.errors).length || !p.totals || !rcpt.ok) return { fieldErrors: p.errors, error: "Please fix the highlighted fields.", values: keep(form) };
 
   // Counsellors who only see their own work always own what they create.
   const ownerId = session.user.viewScope === "all" ? (optionalInt(form, "owner_id") ?? session.user.id) : session.user.id;
@@ -162,7 +180,7 @@ export async function createQuoteAction(_prev: FormState, form: FormData): Promi
     const [q] = await tx
       .insert(quotes)
       .values({
-        subject: p.subject, description: p.description, learnerId, leadId, ownerId, billingAddress: addressOrNull(p.bill), expiredAt: p.expiredAt,
+        subject: p.subject, description: p.description, learnerId: rcpt.learnerId, recipientKind: rcpt.kind, recipientName: rcpt.name, recipientContact: rcpt.contact, leadId, ownerId, billingAddress: addressOrNull(p.bill), expiredAt: p.expiredAt,
         subTotal: money(t.subTotal), discountAmount: money(t.discountAmount), taxAmount: money(t.taxAmount), adjustmentAmount: money(t.adjustmentAmount), grandTotal: money(t.grandTotal),
       })
       .returning({ id: quotes.id });
@@ -183,8 +201,9 @@ export async function updateQuoteAction(id: number, _prev: FormState, form: Form
   if (!current) return { error: "This quote no longer exists." };
 
   const p = parse(form);
-  const { learnerId, leadId } = await resolveLinks(session, form, p.errors);
-  if (Object.keys(p.errors).length || !p.totals || !learnerId) return { fieldErrors: p.errors, error: "Please fix the highlighted fields.", values: keep(form) };
+  const rcpt = await resolveLinks(session, form, p.errors);
+  const { leadId } = rcpt;
+  if (Object.keys(p.errors).length || !p.totals || !rcpt.ok) return { fieldErrors: p.errors, error: "Please fix the highlighted fields.", values: keep(form) };
 
   const ownerId = session.user.viewScope === "all" ? (optionalInt(form, "owner_id") ?? current.ownerId) : current.ownerId;
   const t = p.totals;
@@ -193,7 +212,7 @@ export async function updateQuoteAction(id: number, _prev: FormState, form: Form
     await tx
       .update(quotes)
       .set({
-        subject: p.subject, description: p.description, learnerId, leadId, ownerId, billingAddress: addressOrNull(p.bill), expiredAt: p.expiredAt,
+        subject: p.subject, description: p.description, learnerId: rcpt.learnerId, recipientKind: rcpt.kind, recipientName: rcpt.name, recipientContact: rcpt.contact, leadId, ownerId, billingAddress: addressOrNull(p.bill), expiredAt: p.expiredAt,
         subTotal: money(t.subTotal), discountAmount: money(t.discountAmount), taxAmount: money(t.taxAmount), adjustmentAmount: money(t.adjustmentAmount), grandTotal: money(t.grandTotal),
         updatedAt: new Date(),
       })

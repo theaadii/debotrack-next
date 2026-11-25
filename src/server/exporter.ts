@@ -38,7 +38,7 @@ export async function buildLeadsExport(session: Session, filters: LeadFilters): 
 export async function buildLearnersExport(session: Session, filters: LearnerFilters): Promise<Built> {
   const rows = await allLearners(session, filters);
   return {
-    headers: ["Learner Name", "Phone", "Email", "School / College / Company", "Branch / Stream", "Year of Study", "City", "Qualification", "Type", "Counsellor", "Enquiries", "Added On"],
+    headers: ["Learner Name", "Phone", "Email", "School / College / Company", "Branch / Stream", "Year of Study", "City", "Degree / Course", "Type", "Counsellor", "Enquiries", "Added On"],
     rows: rows.map((r) => [r.name, r.phones.join(", "), r.emails.join(", "), r.college ?? "", r.branch ?? "", r.year ?? "", r.city ?? "", r.qualification ?? "", r.kind === "professional" ? "Working professional" : "Student", r.owner ?? "", r.enquiries, date(r.createdAt)]),
   };
 }

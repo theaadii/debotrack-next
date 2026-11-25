@@ -83,7 +83,7 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
               <Row label="College">{lead.college}</Row>
               <Row label="Year">{lead.year ? yearLabel(lead.year) : null}</Row>
               <Row label="Branch">{lead.branch}</Row>
-              <Row label="Qualification">{lead.qualification}</Row>
+              <Row label="Degree / Course">{lead.qualification}</Row>
               <Row label="City">{lead.city}</Row>
             </dl>
           </Card>

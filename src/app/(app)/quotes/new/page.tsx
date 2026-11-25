@@ -22,7 +22,7 @@ export default async function NewQuotePage({ searchParams }: PageProps<"/quotes/
 
   const base: QuoteFormValues = {
     subject: "", description: "", expired_at: inThirtyDays(), owner_id: "", lead_id: "", adjustment: "",
-    bill_address: "", bill_city: "", bill_state: "", bill_postcode: "", bill_country: "India", learner: null, items: [],
+    bill_address: "", bill_city: "", bill_state: "", bill_postcode: "", bill_country: "India", recipient_kind: "learner", recipient_name: "", recipient_contact: "", learner: null, items: [],
   };
 
   // "Create quote" from an enquiry: the learner, the program and batch fee and the enquiry's discount come along.

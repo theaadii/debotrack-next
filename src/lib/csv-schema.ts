@@ -24,7 +24,7 @@ export const COLUMNS: Column[] = [
   { key: "program", label: "Program", aliases: ["program", "programme", "course", "courseinterested"], importable: true },
   { key: "batch", label: "Batch", aliases: ["batch"], importable: true },
   { key: "city", label: "City", aliases: ["city", "town", "location"], importable: true },
-  { key: "qualification", label: "Qualification", aliases: ["qualification", "education"], importable: true },
+  { key: "qualification", label: "Degree / Course", aliases: ["degreecourse", "degree", "qualification", "education"], importable: true },
   { key: "discount_type", label: "Discount Type", aliases: ["discounttype"], importable: true },
   { key: "discount_value", label: "Discount", aliases: ["discount", "discountvalue", "discountamount"], importable: true },
   { key: "final_fee", label: "Final Fee", aliases: ["finalfee", "decidedfee"], importable: false },

@@ -66,7 +66,7 @@ export default async function LearnerPage({ params }: PageProps<"/learners/[id]"
             <Row label="College">{learner.college}</Row>
             <Row label="Year">{learner.year ? yearLabel(learner.year) : null}</Row>
             <Row label="Branch">{learner.branch}</Row>
-            <Row label="Qualification">{learner.qualification}</Row>
+            <Row label="Degree / Course">{learner.qualification}</Row>
             <Row label="City">{learner.city}</Row>
             <Row label="Counsellor">{learner.owner}</Row>
             <Row label="Added">{formatDate(learner.createdAt)}</Row>

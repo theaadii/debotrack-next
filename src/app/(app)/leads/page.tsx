@@ -4,17 +4,20 @@ import { Suspense } from "react";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { getOptions } from "@/server/options";
-import { listLeads, type LeadFilters } from "@/server/leads";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { LEAD_SORTS, listLeads, type LeadFilters } from "@/server/leads";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
+import { FilterBar, FilterField, buildChips } from "@/components/filters/filter-bar";
+import { isoDate, num, oneOf, text } from "@/lib/list-params";
 import { EmptyState, PageHeader, Pagination, Table, Td, Th } from "@/components/ui/page";
 import { StageSelect } from "@/components/leads/stage-select";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Flash } from "@/components/flash";
-import { formatDate, formatMoney, niceName } from "@/lib/utils";
+import { formatDate, formatMoney, niceName, yearLabel } from "@/lib/utils";
 import { deleteLeadAction } from "./actions";
-import { Avatar } from "@/components/ui/avatar";
+import { QuickLook } from "@/components/quick-look";
+import { StageBadge } from "@/components/stage-badge";
 import { Blank } from "@/components/ui/blank";
 
 export const metadata: Metadata = { title: "Enquiries" };
@@ -22,19 +25,15 @@ export const metadata: Metadata = { title: "Enquiries" };
 const PAGE_SIZE = 20;
 const BOARD_LIMIT = 300;
 
-const num = (v: string | string[] | undefined) => {
-  const n = Number(Array.isArray(v) ? v[0] : v);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
-};
-const text = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
-
 export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   const session = await requirePermission("leads.view");
   const sp = await searchParams;
   const board = text(sp.view) === "board";
   const page = num(sp.page) ?? 1;
+  const sort = oneOf(sp.sort, LEAD_SORTS.filter((x) => !x.startsWith("enrolled"))) ?? "newest";
   const filters: LeadFilters = {
-    q: text(sp.q), stageId: num(sp.stage), sourceId: num(sp.source), ownerId: num(sp.owner), programId: num(sp.program), from: text(sp.from), to: text(sp.to),
+    q: text(sp.q), stageId: num(sp.stage), sourceId: num(sp.source), ownerId: num(sp.owner), programId: num(sp.program), collegeId: num(sp.college),
+    minFee: num(sp.min_fee), maxFee: num(sp.max_fee), from: isoDate(sp.from), to: isoDate(sp.to), sort,
   };
 
   const [options, { rows, total }] = await Promise.all([getOptions(), listLeads(session, filters, board ? 1 : page, board ? BOARD_LIMIT : PAGE_SIZE)]);
@@ -51,7 +50,19 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   const exportQuery = new URLSearchParams(query);
   exportQuery.delete("view");
 
-  const filtersActive = ["q", "stage", "source", "owner", "program", "from", "to"].some((k) => text(sp[k]));
+  const chips = buildChips("/leads", sp, [
+    { key: "q", label: "Search", value: filters.q },
+    { key: "stage", label: "Status", value: options.stages.find((x) => x.id === filters.stageId)?.name },
+    { key: "source", label: "Source", value: options.sources.find((x) => x.id === filters.sourceId)?.name },
+    { key: "owner", label: "Counsellor", value: options.counsellors.find((u) => u.id === filters.ownerId)?.name },
+    { key: "program", label: "Program", value: options.programs.find((x) => x.id === filters.programId)?.name },
+    { key: "college", label: "College", value: options.colleges.find((x) => x.id === filters.collegeId)?.name },
+    { key: "min_fee", label: "Fee from", value: filters.minFee ? formatMoney(filters.minFee) : undefined },
+    { key: "max_fee", label: "Fee up to", value: filters.maxFee ? formatMoney(filters.maxFee) : undefined },
+    { key: "from", label: "From", value: filters.from },
+    { key: "to", label: "To", value: filters.to },
+  ]);
+  const filtersActive = chips.length > 0;
 
   return (
     <>
@@ -85,42 +96,56 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       />
 
       <Card className="p-0">
-        <form className="grid items-end gap-2 border-b border-border p-3 sm:grid-cols-2 md:p-4 lg:grid-cols-4" role="search">
-          {board && <input type="hidden" name="view" value="board" />}
-          <div className="sm:col-span-2">
-            <label htmlFor="q" className="sr-only">Search</label>
-            <Input id="q" name="q" type="search" placeholder="Search name, phone, email, college…" defaultValue={filters.q} />
-          </div>
-          <Select name="stage" defaultValue={sp.stage as string} aria-label="Status" className="w-full">
-            <option value="">All statuses</option>
-            {options.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
-          <Select name="source" defaultValue={sp.source as string} aria-label="Source" className="w-full">
-            <option value="">All sources</option>
-            {options.sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
-          {session.user.viewScope === "all" && (
-            <Select name="owner" defaultValue={sp.owner as string} aria-label="Counsellor" className="w-full">
-              <option value="">All counsellors</option>
-              {options.counsellors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        <FilterBar
+          basePath="/leads"
+          hidden={board ? { view: "board" } : undefined}
+          search={{ value: filters.q, placeholder: "Search name, phone, email, college…" }}
+          sort={{ value: sort, options: [{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "fee_desc", label: "Fee: high to low" }, { value: "fee_asc", label: "Fee: low to high" }, { value: "name", label: "Learner A to Z" }] }}
+          chips={chips}
+          extra={
+            <nav className="flex gap-1 rounded-full border border-border p-1" aria-label="View">
+              <Link href={withParams({ view: "list" })} aria-current={!board ? "true" : undefined} className={`rounded-full px-3 py-1 text-xs font-semibold ${!board ? "bg-brand text-brand-foreground" : "hover:bg-muted"}`}>List</Link>
+              <Link href={withParams({ view: "board" })} aria-current={board ? "true" : undefined} className={`rounded-full px-3 py-1 text-xs font-semibold ${board ? "bg-brand text-brand-foreground" : "hover:bg-muted"}`}>Board</Link>
+            </nav>
+          }
+        >
+          <FilterField label="Status">
+            <Select name="stage" defaultValue={sp.stage as string} className="w-full">
+              <option value="">All statuses</option>
+              {options.stages.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </Select>
+          </FilterField>
+          <FilterField label="Program">
+            <Select name="program" defaultValue={sp.program as string} className="w-full">
+              <option value="">All programs</option>
+              {options.programs.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </Select>
+          </FilterField>
+          <FilterField label="Source">
+            <Select name="source" defaultValue={sp.source as string} className="w-full">
+              <option value="">All sources</option>
+              {options.sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </Select>
+          </FilterField>
+          <FilterField label="College">
+            <Select name="college" defaultValue={sp.college as string} className="w-full">
+              <option value="">All colleges</option>
+              {options.colleges.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </Select>
+          </FilterField>
+          {session.user.viewScope === "all" && (
+            <FilterField label="Counsellor">
+              <Select name="owner" defaultValue={sp.owner as string} className="w-full">
+                <option value="">All counsellors</option>
+                {options.counsellors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </FilterField>
           )}
-          <Select name="program" defaultValue={sp.program as string} aria-label="Program" className="w-full">
-            <option value="">All programs</option>
-            {options.programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          <Input name="from" type="date" defaultValue={filters.from} aria-label="From date" className="w-full" />
-          <Input name="to" type="date" defaultValue={filters.to} aria-label="To date" className="w-full" />
-          <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-4">
-          <Button type="submit">Filter</Button>
-          {filtersActive && <ButtonLink href={board ? "/leads?view=board" : "/leads"} variant="ghost">Clear</ButtonLink>}
-          <nav className="ml-auto flex gap-1 rounded-full border border-border p-1" aria-label="View">
-            <Link href={withParams({ view: "list" })} aria-current={!board ? "true" : undefined} className={`rounded-full px-3 py-1 text-xs font-semibold ${!board ? "bg-brand text-brand-foreground" : "hover:bg-muted"}`}>List</Link>
-            <Link href={withParams({ view: "board" })} aria-current={board ? "true" : undefined} className={`rounded-full px-3 py-1 text-xs font-semibold ${board ? "bg-brand text-brand-foreground" : "hover:bg-muted"}`}>Board</Link>
-          </nav>
-        
-          </div>
-        </form>
+          <FilterField label="Fee from (₹)"><Input name="min_fee" type="number" min={0} step={1000} defaultValue={filters.minFee} className="w-full" /></FilterField>
+          <FilterField label="Fee up to (₹)"><Input name="max_fee" type="number" min={0} step={1000} defaultValue={filters.maxFee} className="w-full" /></FilterField>
+          <FilterField label="Enquiry from"><Input name="from" type="date" defaultValue={filters.from} className="w-full" /></FilterField>
+          <FilterField label="Enquiry to"><Input name="to" type="date" defaultValue={filters.to} className="w-full" /></FilterField>
+        </FilterBar>
 
         {rows.length === 0 ? (
           <EmptyState
@@ -160,26 +185,31 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
             <Table>
               <thead>
                 <tr>
-                  <Th>Learner</Th><Th>Phone</Th><Th>Status</Th><Th>Counsellor</Th><Th>Program · Batch</Th><Th className="text-right">Final fee</Th><Th>Enquiry date</Th><Th className="text-right">Actions</Th>
+                  <Th className="w-12">Sr</Th><Th>Learner</Th><Th>Status</Th><Th>Program · Batch</Th><Th className="text-right">Final fee</Th><Th>Enquiry date</Th><Th className="text-right">Actions</Th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted/50">
+                {rows.map((r, i) => (
+                  <tr key={r.id} className="hover:bg-muted/50"><Td className="tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + i + 1}</Td>
                     <Td>
-                      <div className="flex items-center gap-3">
-                        <Avatar name={r.learner} />
+                      <QuickLook
+                        data={{
+                          id: r.learnerId, name: r.learner, phone: r.phones[0], email: r.emails[0], college: r.college, branch: r.branch,
+                          year: r.year ? yearLabel(r.year) : null, city: r.city, owner: r.owner,
+                          badge: <StageBadge name={r.stage} kind={r.stageKind} />,
+                          stats: [{ label: "Fee", value: formatMoney(r.finalFee ?? r.courseFee) }],
+                          canCreateEnquiry: false,
+                        }}
+                      >
                         <div className="min-w-0">
-                          <Link href={`/leads/${r.id}`} className="font-semibold hover:text-brand hover:underline">{niceName(r.learner)}</Link>
-                          {r.college && <p className="max-w-56 truncate text-xs text-muted-foreground">{r.college}</p>}
+                          <p className="font-semibold">{niceName(r.learner)}</p>
+                          <p className="max-w-56 truncate text-xs tabular-nums text-muted-foreground">{[r.phones[0], r.college].filter(Boolean).join(" · ")}</p>
                         </div>
-                      </div>
+                      </QuickLook>
                     </Td>
-                    <Td className="tabular-nums">{r.phones[0] ?? <Blank />}</Td>
                     <Td>
                       {canEdit ? <StageSelect leadId={r.id} stageId={r.stageId} stages={stages} /> : <span className="text-xs font-semibold">{r.stage}</span>}
                     </Td>
-                    <Td>{r.owner ?? <Blank />}</Td>
                     <Td>{r.program ? <>{r.program}{r.batch && <span className="text-muted-foreground"> · {r.batch}</span>}</> : <Blank />}</Td>
                     <Td className="text-right tabular-nums">{formatMoney(r.finalFee ?? r.courseFee)}</Td>
                     <Td className="whitespace-nowrap">{formatDate(r.createdAt)}</Td>

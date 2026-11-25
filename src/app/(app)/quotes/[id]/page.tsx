@@ -131,8 +131,8 @@ export default async function QuotePage({ params }: PageProps<"/quotes/[id]">) {
             <div className="mb-3 flex items-center gap-3">
               <Avatar name={q.learner} />
               <div className="min-w-0">
-                {session.can("learners.view") ? <Link href={`/learners/${q.learnerId}`} className="truncate font-semibold hover:text-brand hover:underline">{niceName(q.learner)}</Link> : <p className="truncate font-semibold">{niceName(q.learner)}</p>}
-                <p className="truncate text-xs text-muted-foreground">{[q.phones[0], q.emails[0]].filter(Boolean).join(", ")}</p>
+                {q.learnerId && session.can("learners.view") ? <Link href={`/learners/${q.learnerId}`} className="truncate font-semibold hover:text-brand hover:underline">{niceName(q.learner)}</Link> : <p className="truncate font-semibold">{niceName(q.learner)}</p>}
+                <p className="truncate text-xs text-muted-foreground">{[q.recipientContact, q.phones[0], q.emails[0]].filter(Boolean).join(", ")}{!q.learnerId && <span className="capitalize"> · {q.recipientKind}</span>}</p>
               </div>
             </div>
             {addressLines.length > 0 ? <address className="text-sm not-italic text-muted-foreground">{addressLines.map((l) => <span key={l} className="block">{l}</span>)}</address> : <p className="text-sm text-muted-foreground">No billing address.</p>}

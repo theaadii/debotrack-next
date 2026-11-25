@@ -31,10 +31,10 @@ export function LearnerFields({
           ))}
         </datalist>
       </div>
+      <TextField name="qualification" label="Degree / Course" defaultValue={d.qualification} />
       <SelectField name="year" label="Year" options={YEARS} defaultValue={d.year} />
       <TextField name="branch" label="Branch / Stream" defaultValue={d.branch} />
       <TextField name="city" label="City" defaultValue={d.city} />
-      <TextField name="qualification" label="Qualification" defaultValue={d.qualification} />
       <SelectField name="kind" label="Type" emptyLabel={null} defaultValue={d.kind ?? "student"} options={[{ value: "student", label: "Student" }, { value: "professional", label: "Working professional" }]} />
       {counsellors && (
         <SelectField name="owner_id" label="Counsellor" defaultValue={d.owner_id} emptyLabel="Me" options={counsellors.map((u) => ({ value: u.id, label: u.name }))} />

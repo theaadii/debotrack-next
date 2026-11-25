@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { colleges, learners } from "@/db/schema";
+import { collegeAliases, colleges, learners } from "@/db/schema";
+import { collegeKey, collegeKeySql } from "@/lib/college-key";
 import { requireSession } from "@/lib/auth";
 import { echo, type FormState } from "@/lib/form-state";
 import { keysFor, splitList } from "@/lib/phone";
@@ -103,9 +104,39 @@ export async function createCollegeAction(_prev: FormState, form: FormData): Pro
   const ce = collegeErrors(c);
   if (Object.keys(ce).length) return { fieldErrors: ce, values: echo(form) };
   if (await ensureCollegeExists(c.name)) return { fieldErrors: { name: "This college is already saved." }, values: echo(form) };
-  await db.insert(colleges).values(c);
+  const [created] = await db.insert(colleges).values(c).returning({ id: colleges.id });
+  const clash = await saveAliases(created!.id, c.name, form);
+  if (clash) return { fieldErrors: { aliases: clash }, values: echo(form) };
   revalidatePath("/colleges");
   redirect("/colleges?saved=created");
+}
+
+/**
+ * "Also known as": one spelling per line. An import using any of them lands on this college. Returns an error message
+ * when a spelling already belongs to another college (nothing is saved in that case).
+ */
+async function saveAliases(collegeId: number, ownName: string, form: FormData, replace = false): Promise<string | null> {
+  const lines = String(form.get("aliases") ?? "").split(/\r?\n|,/).map((l) => l.trim()).filter(Boolean).slice(0, 50);
+  const own = collegeKey(ownName);
+  const unique = new Map<string, string>();
+  for (const l of lines) {
+    const k = collegeKey(l.slice(0, 200));
+    if (k && k !== own && !unique.has(k)) unique.set(k, l.slice(0, 200));
+  }
+  if (unique.size) {
+    const keys = [...unique.keys()];
+    const others = await db
+      .select({ alias: collegeAliases.alias, college: colleges.name })
+      .from(collegeAliases)
+      .innerJoin(colleges, eq(colleges.id, collegeAliases.collegeId))
+      .where(and(inArray(collegeAliases.aliasKey, keys), ne(collegeAliases.collegeId, collegeId)));
+    if (others[0]) return `"${others[0].alias}" already belongs to ${others[0].college}.`;
+    const named = await db.select({ name: colleges.name }).from(colleges).where(and(ne(colleges.id, collegeId), sql`${sql.raw(collegeKeySql("name"))} in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`)).limit(1);
+    if (named[0]) return `"${named[0].name}" is already a separate college.`;
+  }
+  if (replace) await db.delete(collegeAliases).where(eq(collegeAliases.collegeId, collegeId));
+  if (unique.size) await db.insert(collegeAliases).values([...unique].map(([aliasKey, alias]) => ({ collegeId, alias, aliasKey }))).onConflictDoNothing();
+  return null;
 }
 
 /** True when a college with this name (ignoring upper/lower case) already exists, other than `exceptId`. */
@@ -125,6 +156,8 @@ export async function updateCollegeAction(id: number, _prev: FormState, form: Fo
   const ce = collegeErrors(c);
   if (Object.keys(ce).length) return { fieldErrors: ce, values: echo(form) };
   if (await ensureCollegeExists(c.name, id)) return { fieldErrors: { name: "Another college already has this name." }, values: echo(form) };
+  const clash = await saveAliases(id, c.name, form, true);
+  if (clash) return { fieldErrors: { aliases: clash }, values: echo(form) };
   await db.update(colleges).set(c).where(eq(colleges.id, id));
   revalidatePath("/colleges");
   redirect("/colleges?saved=updated");

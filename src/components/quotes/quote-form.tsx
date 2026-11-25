@@ -26,6 +26,9 @@ export type QuoteFormValues = {
   bill_state: string;
   bill_postcode: string;
   bill_country: string;
+  recipient_kind: string;
+  recipient_name: string;
+  recipient_contact: string;
   learner: PickedLearner | null;
   items: QuoteItemValues[];
 };
@@ -59,6 +62,7 @@ export function QuoteForm({
   const v = (k: keyof QuoteFormValues & string) => state.values?.[k] ?? (initial[k as keyof QuoteFormValues] as string) ?? "";
   const err = (k: string) => state.fieldErrors?.[k];
 
+  const [kind, setKind] = useState(v("recipient_kind") || "learner");
   const [learner, setLearner] = useState<PickedLearner | null>(initial.learner);
   const [items, setItems] = useState<QuoteItemValues[]>(initial.items.length ? initial.items : [newItem()]);
   const [adjustment, setAdjustment] = useState(v("adjustment"));
@@ -89,7 +93,7 @@ export function QuoteForm({
   return (
     <form ref={ref} action={formAction} className="space-y-4" noValidate>
       <ErrorSummary state={state} />
-      <input type="hidden" name="learner_id" value={learner?.id ?? ""} />
+      <input type="hidden" name="learner_id" value={kind === "learner" ? (learner?.id ?? "") : ""} />
       <input type="hidden" name="lead_id" value={initial.lead_id} />
       <input type="hidden" name="items_json" value={JSON.stringify(items.map((it) => ({ sku: it.sku, name: it.name, quantity: it.quantity, price: it.price, discountKind: it.discountKind, discountValue: it.discountValue, taxPercent: it.taxPercent })))} />
 
@@ -123,16 +127,35 @@ export function QuoteForm({
           <Card>
             <CardTitle className="mb-3">Bill to</CardTitle>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Learner" htmlFor="learner_search" required error={err("learner_search")} className="md:col-span-2">
-                <LearnerPicker
-                  value={learner}
-                  error={err("learner_search")}
-                  onChange={(l) => {
-                    setLearner(l);
-                    if (l && !city && l.city) setCity(l.city);
-                  }}
-                />
+              <Field label="Quote for" htmlFor="recipient_kind" className="md:col-span-2" hint="Quotes can go to a learner, a college or institute, a vendor, or anyone else (workshops, sessions, programs).">
+                <Select id="recipient_kind" name="recipient_kind" value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option value="learner">Learner</option>
+                  <option value="college">College / institute</option>
+                  <option value="vendor">Vendor / company</option>
+                  <option value="other">Other</option>
+                </Select>
               </Field>
+              {kind === "learner" ? (
+                <Field label="Learner" htmlFor="learner_search" required error={err("learner_search")} className="md:col-span-2">
+                  <LearnerPicker
+                    value={learner}
+                    error={err("learner_search")}
+                    onChange={(l) => {
+                      setLearner(l);
+                      if (l && !city && l.city) setCity(l.city);
+                    }}
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field label={kind === "college" ? "College / institute name" : kind === "vendor" ? "Vendor / company name" : "Name"} htmlFor="recipient_name" required error={err("recipient_name")}>
+                    <Input id="recipient_name" name="recipient_name" defaultValue={v("recipient_name")} maxLength={200} aria-invalid={err("recipient_name") ? true : undefined} />
+                  </Field>
+                  <Field label="Contact person, phone or email" htmlFor="recipient_contact" error={err("recipient_contact")}>
+                    <Input id="recipient_contact" name="recipient_contact" defaultValue={v("recipient_contact")} maxLength={200} />
+                  </Field>
+                </>
+              )}
               <Field label="Address" htmlFor="bill_address" error={err("bill_address")} className="md:col-span-2">
                 <Input id="bill_address" name="bill_address" defaultValue={v("bill_address")} maxLength={2000} />
               </Field>

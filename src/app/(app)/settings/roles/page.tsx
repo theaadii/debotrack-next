@@ -28,10 +28,10 @@ export default async function RolesPage() {
       <Card className="p-0">
         <div className="px-1 pb-2 md:px-2">
           <Table>
-            <thead><tr><Th>Role</Th><Th>Access</Th><Th>Sees</Th><Th className="text-right">Users</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th className="w-12">Sr</Th><Th>Role</Th><Th>Access</Th><Th>Sees</Th><Th className="text-right">Users</Th><Th className="text-right">Actions</Th></tr></thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
+              {rows.map((r, i) => (
+                <tr key={r.id}><Td className="tabular-nums text-muted-foreground">{i + 1}</Td>
                   <Td>
                     <Link href={`/settings/roles/${r.id}/edit`} className="font-semibold text-brand hover:underline">{r.name}</Link>
                     {r.description && <p className="text-xs text-muted-foreground">{r.description}</p>}

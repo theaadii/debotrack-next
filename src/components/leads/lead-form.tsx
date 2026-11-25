@@ -91,6 +91,9 @@ export function LeadForm({
               ))}
             </datalist>
           </Field>
+          <Field label="Degree / Course" htmlFor="qualification">
+            <Input id="qualification" name="qualification" defaultValue={v("qualification")} autoComplete="off" />
+          </Field>
           <Field label="Year" htmlFor="year">
             <Select id="year" name="year" defaultValue={v("year")}>
               <option value="">None</option>
@@ -106,9 +109,6 @@ export function LeadForm({
           </Field>
           <Field label="City" htmlFor="city">
             <Input id="city" name="city" defaultValue={v("city")} autoComplete="off" />
-          </Field>
-          <Field label="Qualification" htmlFor="qualification">
-            <Input id="qualification" name="qualification" defaultValue={v("qualification")} autoComplete="off" />
           </Field>
         </div>
       </Card>

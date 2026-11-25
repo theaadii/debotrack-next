@@ -72,7 +72,7 @@ export function learnerErrors(l: { name: string; phones: string[]; emails: strin
       college: [l.college, LIMITS.short, "The college"],
       branch: [l.branch, LIMITS.short, "The branch"],
       city: [l.city, LIMITS.short, "The city"],
-      qualification: [l.qualification, LIMITS.short, "The qualification"],
+      qualification: [l.qualification, LIMITS.short, "The degree / course"],
     }),
   );
   return errors;

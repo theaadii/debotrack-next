@@ -63,6 +63,21 @@ export async function saveUserAction(id: number | null, _prev: FormState, form: 
   redirect("/settings/users?saved=saved");
 }
 
+/** Removes a user. Their enquiries, learners and quotes stay (they just lose the owner); they are signed out and can never sign in again. */
+export async function deleteUserAction(id: number) {
+  const me = await guard("settings.users");
+  if (id === me.user.id) back("/settings/users", { error: "You can't delete your own account." });
+  const [target] = await db.select({ id: users.id, active: users.active, type: roles.permissionType }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(users.id, id)).limit(1);
+  if (!target) back("/settings/users", { error: "This user no longer exists." });
+  if (target!.type === "all" && target!.active) {
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(and(eq(roles.permissionType, "all"), eq(users.active, true), ne(users.id, id)));
+    if (n === 0) back("/settings/users", { error: "This is the only active administrator, so it can't be deleted." });
+  }
+  await db.delete(users).where(eq(users.id, id));
+  revalidatePath("/settings/users");
+  redirect("/settings/users?saved=deleted");
+}
+
 // ------------------------------------------------------------------ roles
 export async function saveRoleAction(id: number | null, _prev: FormState, form: FormData): Promise<FormState> {
   await guard("settings.roles");

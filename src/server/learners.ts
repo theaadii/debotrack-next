@@ -1,11 +1,18 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { colleges, leads, learners, pipelineStages, users } from "@/db/schema";
 import type { Session } from "@/lib/auth";
 import { learnerScope } from "./scope";
 
-export type LearnerFilters = { q?: string; collegeId?: number; year?: number; ownerId?: number };
+export type LearnerFilters = { q?: string; collegeId?: number; year?: number; ownerId?: number; enrolment?: "enrolled" | "not"; from?: string; to?: string; sort?: LearnerSort };
+export const LEARNER_SORTS = ["newest", "oldest", "name_asc", "name_desc"] as const;
+export type LearnerSort = (typeof LEARNER_SORTS)[number];
+const stageCount = (kind: "open" | "won" | "lost") =>
+  sql<number>`(select count(*)::int from ${leads} join ${pipelineStages} on ${pipelineStages.id} = ${leads.stageId} where ${leads.learnerId} = ${learners.id} and ${pipelineStages.kind} = ${kind})`;
+const hasEnrolment = sql`exists (select 1 from ${leads} join ${pipelineStages} on ${pipelineStages.id} = ${leads.stageId} where ${leads.learnerId} = ${learners.id} and ${pipelineStages.kind} = 'won')`;
+/** Learners whose every enquiry is finished (enrolled or lost) sink to the bottom of the list. */
+const closed = sql`not exists (select 1 from ${leads} join ${pipelineStages} on ${pipelineStages.id} = ${leads.stageId} where ${leads.learnerId} = ${learners.id} and ${pipelineStages.kind} = 'open') and exists (select 1 from ${leads} where ${leads.learnerId} = ${learners.id})`;
 const esc = (s: string) => s.replace(/[\\%_]/g, "\\$&");
 
 function conditions(session: Session, f: LearnerFilters): (SQL | undefined)[] {
@@ -13,6 +20,10 @@ function conditions(session: Session, f: LearnerFilters): (SQL | undefined)[] {
   if (f.collegeId) c.push(eq(learners.collegeId, f.collegeId));
   if (f.year) c.push(eq(learners.year, f.year));
   if (f.ownerId) c.push(eq(learners.ownerId, f.ownerId));
+  if (f.from) c.push(gte(learners.createdAt, sql`${f.from}::date`));
+  if (f.to) c.push(lt(learners.createdAt, sql`(${f.to}::date + 1)`));
+  if (f.enrolment === "enrolled") c.push(hasEnrolment);
+  if (f.enrolment === "not") c.push(sql`not ${hasEnrolment}`);
   const q = f.q?.trim();
   if (q) {
     const like = `%${esc(q)}%`;
@@ -47,6 +58,9 @@ const select = {
   owner: users.name,
   createdAt: learners.createdAt,
   enquiries: sql<number>`(select count(*)::int from ${leads} where ${leads.learnerId} = ${learners.id})`,
+  enrolled: stageCount("won"),
+  openEnquiries: stageCount("open"),
+  lostEnquiries: stageCount("lost"),
 };
 
 function base() {
@@ -54,10 +68,20 @@ function base() {
 }
 export type LearnerRow = Awaited<ReturnType<typeof base>>[number];
 
+function learnerOrder(sort?: LearnerSort) {
+  switch (sort) {
+    case "oldest": return [asc(learners.createdAt), asc(learners.id)];
+    case "name_asc": return [asc(learners.name), asc(learners.id)];
+    case "name_desc": return [desc(learners.name), desc(learners.id)];
+    // Default: newest first, with learners whose enquiries are all finished (enrolled / lost) at the end.
+    default: return [sql`(${closed})`, desc(learners.createdAt), desc(learners.id)];
+  }
+}
+
 export async function listLearners(session: Session, f: LearnerFilters, page: number, pageSize: number) {
   const where = and(...conditions(session, f));
   const [rows, [{ total } = { total: 0 }]] = await Promise.all([
-    base().where(where).orderBy(desc(learners.createdAt), desc(learners.id)).limit(pageSize).offset((page - 1) * pageSize),
+    base().where(where).orderBy(...learnerOrder(f.sort)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ total: sql<number>`count(*)::int` }).from(learners).leftJoin(colleges, eq(colleges.id, learners.collegeId)).where(where),
   ]);
   return { rows, total };

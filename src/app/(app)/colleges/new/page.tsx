@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requirePermission } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page";
-import { ActionForm, FormGrid, TextField } from "@/components/forms";
+import { ActionForm, AreaField, FormGrid, TextField } from "@/components/forms";
 import { createCollegeAction } from "../../learners/actions";
 
 export const metadata: Metadata = { title: "Add college" };
@@ -16,6 +16,7 @@ export default async function NewCollegePage() {
         <ActionForm action={createCollegeAction} submitLabel="Save" cancelHref="/colleges">
           <FormGrid>
             <TextField name="name" label="Name" required className="md:col-span-2" />
+            <AreaField name="aliases" label="Also known as" className="md:col-span-2" hint="Other spellings, one per line (for example MET IOE, MET BKC). Imports using any of them go to this college." rows={3} />
             <TextField name="city" label="City" />
             <TextField name="website" label="Website" type="url" placeholder="https://" />
           </FormGrid>

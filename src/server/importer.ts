@@ -95,7 +95,7 @@ export async function importSpreadsheet(session: Session, grid: string[][], opts
       const bad =
         tooLong(name, LIMITS.name, "The name") ?? listProblem(phones, phoneProblem) ?? listProblem(emails, emailProblem) ??
         tooLong(opts.all.college || v.college, LIMITS.short, "The college") ?? tooLong(opts.all.branch || v.branch, LIMITS.short, "The branch") ??
-        tooLong(v.city, LIMITS.short, "The city") ?? tooLong(v.qualification, LIMITS.short, "The qualification") ?? tooLong(v.title, LIMITS.short, "The title");
+        tooLong(v.city, LIMITS.short, "The city") ?? tooLong(v.qualification, LIMITS.short, "The degree / course") ?? tooLong(v.title, LIMITS.short, "The title");
       if (bad) throw new Error(bad);
 
       const collegeName = opts.all.college || v.college || "";
