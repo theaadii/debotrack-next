@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // pdfkit reads its own data files from node_modules at run time, so it must not be bundled.
   // postgres ships a workerd-specific build that must be used on Cloudflare Workers.
-  serverExternalPackages: ["pdfkit", "postgres"],
+  serverExternalPackages: ["pdfkit", "pg"],
   // quote-pdf.ts reads these from disk at run time. Without this the serverless bundle omits them
   // and every quote PDF fails in production (works locally, 500 on Vercel).
   outputFileTracingIncludes: {

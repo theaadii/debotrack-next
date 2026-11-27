@@ -5,6 +5,8 @@ import type { Session } from "@/lib/auth";
 import { TZ } from "./scope";
 
 const n = (v: unknown) => Number(v ?? 0);
+/** Runs raw SQL and returns just the rows. */
+const run = async (q: ReturnType<typeof sql>) => (await db.execute(q)).rows;
 
 export async function getDashboard(session: Session, days: number) {
   const own = session.user.viewScope === "own";
@@ -13,7 +15,7 @@ export async function getDashboard(session: Session, days: number) {
   const since = sql`now() - make_interval(days => ${days})`;
   const today = sql`(now() at time zone ${TZ})::date`;
 
-  const [summary] = await db.execute(sql`
+  const [summary] = await run(sql`
     select
       count(*) filter (where l.created_at >= ${since}) as new_enq,
       count(*) filter (where l.created_at >= ${since} and s.kind = 'won') as converted,
@@ -25,7 +27,7 @@ export async function getDashboard(session: Session, days: number) {
     where true ${ownLead}`);
 
   const ownAct = own ? sql`and (le.owner_id = ${uid} or a.user_id = ${uid})` : sql``;
-  const followUps = await db.execute(sql`
+  const followUps = await run(sql`
     select a.id, a.type, a.title, a.starts_at, le.id as lead_id, p.name as learner
     from app.activities a
     left join app.leads le on le.id = a.lead_id
@@ -34,42 +36,42 @@ export async function getDashboard(session: Session, days: number) {
       and (a.starts_at at time zone ${TZ})::date = ${today} ${ownAct}
     order by a.starts_at limit 8`);
 
-  const [overdue] = await db.execute(sql`
+  const [overdue] = await run(sql`
     select count(*) as c from app.activities a left join app.leads le on le.id = a.lead_id
     where a.type in ('call','meeting','task') and a.done = false and a.starts_at is not null
       and a.starts_at < now() and (a.starts_at at time zone ${TZ})::date < ${today} ${ownAct}`);
 
-  const stages = await db.execute(sql`
+  const stages = await run(sql`
     select s.id, s.name, count(l.id) as n
     from app.pipeline_stages s
     left join app.leads l on l.stage_id = s.id ${own ? sql`and l.owner_id = ${uid}` : sql``}
     where s.kind = 'open' group by s.id, s.name, s.sort_order order by s.sort_order`);
 
-  const series = await db.execute(sql`
+  const series = await run(sql`
     select to_char(d::date, 'DD Mon') as day,
       (select count(*) from app.leads l where (l.created_at at time zone ${TZ})::date = d::date ${ownLead}) as enquiries,
       (select count(*) from app.leads l join app.pipeline_stages s on s.id = l.stage_id
         where s.kind = 'won' and (l.closed_at at time zone ${TZ})::date = d::date ${ownLead}) as enrolled
     from generate_series(${today} - (${days - 1}::int), ${today}, interval '1 day') d order by d`);
 
-  const latest = await db.execute(sql`
+  const latest = await run(sql`
     select l.id, p.name as learner, l.title, s.name as stage, s.kind, l.created_at
     from app.leads l join app.learners p on p.id = l.learner_id join app.pipeline_stages s on s.id = l.stage_id
     where true ${ownLead} order by l.created_at desc limit 6`);
 
-  const bySource = await db.execute(sql`
+  const bySource = await run(sql`
     select coalesce(src.name, 'No source') as name, count(*) as enquiries,
       count(*) filter (where s.kind = 'won') as enrolled
     from app.leads l join app.pipeline_stages s on s.id = l.stage_id left join app.lead_sources src on src.id = l.source_id
     where l.created_at >= ${since} ${ownLead} group by 1 order by 2 desc limit 8`);
 
-  const byProgram = await db.execute(sql`
+  const byProgram = await run(sql`
     select coalesce(p.name, 'No program') as name, count(*) as enquiries,
       count(*) filter (where s.kind = 'won') as enrolled
     from app.leads l join app.pipeline_stages s on s.id = l.stage_id left join app.programs p on p.id = l.program_id
     where l.created_at >= ${since} ${ownLead} group by 1 order by 2 desc limit 8`);
 
-  const upcomingBatches = await db.execute(sql`
+  const upcomingBatches = await run(sql`
     select b.id, p.name as program, b.name, b.start_date, b.seats,
       (select count(*) from app.leads l where l.batch_id = b.id) as enquiries,
       (select count(*) from app.leads l join app.pipeline_stages s on s.id = l.stage_id where l.batch_id = b.id and s.kind = 'won') as enrolled
@@ -77,7 +79,7 @@ export async function getDashboard(session: Session, days: number) {
     where b.active and (b.start_date is null or b.start_date >= (${today} - 45))
     order by b.start_date nulls last, b.name limit 6`);
 
-  const counsellors = own ? [] : await db.execute(sql`
+  const counsellors = own ? [] : await run(sql`
     select u.name,
       count(l.id) filter (where l.created_at >= ${since}) as enquiries,
       count(l.id) filter (where s.kind = 'won' and l.closed_at >= ${since}) as enrolled,
